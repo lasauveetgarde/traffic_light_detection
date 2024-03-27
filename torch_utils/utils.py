@@ -199,8 +199,8 @@ class MetricLogger:
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        log(f"{header} Total time: {total_time_str} ({total_time / len(iterable):.4f} s / it)")
-
+        if len(iterable) > 0 and total_time > 0:
+            log(f"{header} Total time: {total_time_str} ({total_time / len(iterable):.4f} s / it)")
 
 def collate_fn(batch):
     return tuple(zip(*batch))

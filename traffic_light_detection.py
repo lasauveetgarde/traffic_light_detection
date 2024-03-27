@@ -22,6 +22,9 @@ from torchvision import transforms as transforms
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from utils.logging import log_to_json
 
+VIDEO_PATH = "input/inference_videos/german_road.mp4"
+WEIGHT_PATH = "outputs/training/traffic_test/best_model.pth"
+
 def read_return_video_data(video_path):
     cap = cv2.VideoCapture(video_path)
     # Get the video's frame width and height
@@ -33,52 +36,12 @@ def read_return_video_data(video_path):
 def parse_opt():
         # Construct the argument parser.
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '-i', '--input', 
-        help='path to input video',
-    )
-    parser.add_argument(
-        '--data', 
-        default=None,
-        help='(optional) path to the data config file'
-    )
-    parser.add_argument(
-        '-m', '--model', 
-        default=None,
-        help='name of the model'
-    )
-    parser.add_argument(
-        '-w', '--weights', 
-        default=None,
-        help='path to trained checkpoint weights if providing custom YAML file'
-    )
+
     parser.add_argument(
         '-th', '--threshold', 
         default=0.5, 
         type=float,
         help='detection threshold'
-    )
-    parser.add_argument(
-        '-si', '--show',  
-        action='store_true',
-        help='visualize output only if this argument is passed'
-    )
-    parser.add_argument(
-        '-mpl', '--mpl-show', 
-        dest='mpl_show', 
-        action='store_true',
-        help='visualize using matplotlib, helpful in notebooks'
-    )
-    parser.add_argument(
-        '-d', '--device', 
-        default=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
-        help='computation/training device, default is GPU if GPU present'
-    )
-    parser.add_argument(
-        '-ims', '--imgsz', 
-        default=None,
-        type=int,
-        help='resize image to, by default use the original frame/image size'
     )
     parser.add_argument(
         '-nlb', '--no-labels',
@@ -103,12 +66,6 @@ def parse_opt():
         '--track',
         action='store_true'
     )
-    parser.add_argument(
-        '--log-json',
-        dest='log_json',
-        action='store_true',
-        help='store a json log file in COCO format in the output directory'
-    )
     args = vars(parser.parse_args())
     return args
 
@@ -121,35 +78,12 @@ def main(args):
 
     # Load the data configurations.
     data_configs = None
-    if args['data'] is not None:
-        with open(args['data']) as file:
-            data_configs = yaml.safe_load(file)
-        NUM_CLASSES = data_configs['NC']
-        CLASSES = data_configs['CLASSES']
-        
-    DEVICE = args['device']
+    DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     OUT_DIR = set_infer_dir()
-    VIDEO_PATH = None
 
-    # Load the pretrained model
-    if args['weights'] is None:
-        # If the config file is still None, 
-        # then load the default one for COCO.
-        if data_configs is None:
-            with open(os.path.join('data_configs', 'voc.yaml')) as file:
-                data_configs = yaml.safe_load(file)
-            NUM_CLASSES = data_configs['NC']
-            CLASSES = data_configs['CLASSES']
-            print(CLASSES)
-        try:
-            build_model = create_model[args['model']]
-            model, coco_model = build_model(num_classes=NUM_CLASSES, coco_model=True)
-        except:
-            build_model = create_model['fasterrcnn_resnet50_fpn_v2']
-            model, coco_model = build_model(num_classes=NUM_CLASSES, coco_model=True)
-    # Load weights if path provided.
-    if args['weights'] is not None:
-        checkpoint = torch.load(args['weights'], map_location=DEVICE)
+    # # Load weights if path provided.
+    if WEIGHT_PATH is not None:
+        checkpoint = torch.load(WEIGHT_PATH, map_location=DEVICE)
         # If config file is not given, load from model dictionary.
         if data_configs is None:
             data_configs = True
@@ -165,11 +99,6 @@ def main(args):
     model.to(DEVICE).eval()
 
     COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
-    if args['input'] == None:
-        VIDEO_PATH = data_configs['video_path']
-    else:
-        VIDEO_PATH = args['input']
-    assert VIDEO_PATH is not None, 'Please provide path to an input video...'
 
     # Define the detection threshold any detection having
     # score below this will be discarded.
@@ -182,17 +111,13 @@ def main(args):
     out = cv2.VideoWriter(f"{OUT_DIR}/{save_name}.mp4", 
                         cv2.VideoWriter_fourcc(*'mp4v'), 30, 
                         (frame_width, frame_height))
-    if args['imgsz'] != None:
-        RESIZE_TO = args['imgsz']
-    else:
-        RESIZE_TO = frame_width
+
+    RESIZE_TO = frame_width
 
     frame_count = 0 # To count total frames.
     total_fps = 0 # To get the final frames per second.
 
-    # read until end of video
     while(cap.isOpened()):
-        # capture each frame of the video
         ret, frame = cap.read()
         if ret:
             orig_frame = frame.copy()
@@ -211,18 +136,13 @@ def main(args):
 
             forward_pass_time = forward_end_time - start_time
             
-            # Get the current fps.
             fps = 1 / (forward_pass_time)
-            # Add `fps` to `total_fps`.
             total_fps += fps
-            # Increment frame count.
+
             frame_count += 1
             
             # Load all detection to CPU for further operations.
             outputs = [{k: v.to('cpu') for k, v in t.items()} for t in outputs]
-            # Log to JSON?
-            if args['log_json']:
-                log_to_json(frame, os.path.join(OUT_DIR, 'log.json'), outputs)
             # Carry further only if there are detected boxes.
             if len(outputs[0]['boxes']) != 0:
                 draw_boxes, pred_classes, scores = convert_detections(
@@ -256,11 +176,10 @@ def main(args):
             print_string += f"Forward pass + annotation time: {forward_and_annot_time:.3f} seconds"
             print(print_string)            
             out.write(frame)
-            if args['show']:
-                cv2.imshow('Prediction', frame)
-                # Press `q` to exit
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+            cv2.imshow('Prediction', frame)
+            # Press `q` to exit
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
         else:
             break

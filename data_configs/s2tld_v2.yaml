@@ -1,0 +1,18 @@
+# Images and labels direcotry should be relative to train.py
+TRAIN_DIR_IMAGES: 'input/s2tld_v2/normal_1/JPEGImages'
+TRAIN_DIR_LABELS: 'input/s2tld_v2/normal_1/Annotations'
+VALID_DIR_IMAGES: 'input/s2tld_v2/normal_2/JPEGImages'
+VALID_DIR_LABELS: 'input/s2tld_v2/normal_2/Annotations'
+
+# Class names.
+CLASSES: [
+    '__background__',
+    'red', 'yellow', 'green',
+    'off', 'wait_on'
+]
+
+# Number of classes (object classes + 1 for background class in Faster RCNN).
+NC: 6
+
+# Whether to save the predictions of the validation set while training.
+SAVE_VALID_PREDICTION_IMAGES: True
